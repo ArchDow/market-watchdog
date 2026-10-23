@@ -1,11 +1,25 @@
 # market-watchdog
 
-实时资讯抓取 + **飞书单聊推送**的无服务器程序。V1 覆盖四个信源：SEC EDGAR 8-K、FRED 信用温度计、中文快讯（财联社/金十，经 RSSHub）、X 大 V（Nitter 镜像）。
+实时资讯抓取 + **飞书单聊推送**的无服务器程序。信源：SEC EDGAR 8-K、FRED 信用温度计、中文快讯（财联社/金十，经 RSSHub），以及当前不可用的 X 大 V（Nitter 镜像）——实测状态见下方表格。
 
 > **company_ir（公司 IR 官网）为何缺席？** 实测 2026-10-23：Meta / CoreWeave 的 IR RSS
 > 返回 429 Cloudflare JS 盾（无头 HTTP 客户端无法通过），NVIDIA 旧 URL 已 404 且新域名
 > 同样有盾。这些公司的重大公告已由 SEC EDGAR 8-K 覆盖；如你有无盾的 IR RSS，
 > 在 `config.yaml → sources.company_ir` 加回即可。
+
+> **V1 实际可用的信源只有 3 个（2026-10-24 实测）**：
+> | 信源 | 状态 | 证据 |
+> |---|---|---|
+> | SEC EDGAR | ✅ 可用 | Actions 首跑拿到 5 份 filings |
+> | FRED | ✅ 可用 | 5 条（含 fredgraph.csv 免 key 回退） |
+> | 中文快讯（RSSHub） | ✅ 可用 | 经 `hub.slarker.me` 命中，财联社 20 条 + 金十 2 条 |
+> | x_nitter（X 大 V） | ❌ **当前不可用** | `xcancel.com` / `nitter.privacydev.net` / `nitter.poast.org` 三镜像全部失败，本轮 0 条。Nitter 生态已基本停摆，X 官方 API 需付费，暂无免费替代 |
+> | company_ir | ⛔ V1 禁用 | Cloudflare JS 盾 |
+>
+> RSSHub 公共实例的失败形态会变（2026-10-23 大陆超时 → 2026-10-24 Actions 上 403），
+> 因此 `config.yaml` 里每个 feed 用 `urls:` 列表做多镜像顺序回退（回退实现在
+> `sources/rss_feeds.py`，不是配置层挂多条——配置层挂多条会因 `source_label` 不同
+> 产生不同 hash 而重复推送同一条新闻）。
 
 ## 快速开始
 
