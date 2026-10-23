@@ -122,13 +122,22 @@ sources:
       - "NASDAQ100"          # NASDAQ 100
 
   # 中文快讯层（财联社直连 API 需签名、无官方文档，实测不可行 → 一律走 RSSHub 公共路由。
-  # rsshub.app 在大陆直连 ConnectTimeout（实测），GitHub Actions 美国节点可达性以部署日志为准）
+  # 2026-10-24 实测：rsshub.app 在 GitHub Actions（美国 runner）返回 403 Forbidden，
+  # 大陆直连 ConnectTimeout → 改用多镜像顺序回退（代码里实现，避免同条新闻多 hash 重复推）。
+  # 镜像可用性实测（2026-10-24，带代理）：hub.slarker.me 200 / rsshub.ktachibana.party 200
+  #   / rsshub.rssforever.com 超时 / rsshub.pseudoyu.com 连接被重置。
   rss_feeds:
     enabled: true
     feeds:
-      - url: "https://rsshub.app/cls/telegraph"
+      - urls:
+          - "https://hub.slarker.me/cls/telegraph"
+          - "https://rsshub.ktachibana.party/cls/telegraph"
+          - "https://rsshub.app/cls/telegraph"
         label: 财联社电报（RSSHub）
-      - url: "https://rsshub.app/jin10/flash"
+      - urls:
+          - "https://hub.slarker.me/jin10/flash"
+          - "https://rsshub.ktachibana.party/jin10/flash"
+          - "https://rsshub.app/jin10/flash"
         label: 金十数据 7x24（RSSHub）
 
   # X 大 V：免费层用 Nitter RSS 镜像（第三方，偶发挂掉）
@@ -136,6 +145,7 @@ sources:
     enabled: true
     # 两个镜像，轮换 / 失败兜底
     instances:
+      - "https://xcancel.com"
       - "https://nitter.privacydev.net"
       - "https://nitter.poast.org"
     handles:
