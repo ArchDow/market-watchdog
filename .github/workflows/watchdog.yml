@@ -1,0 +1,106 @@
+name: market-watchdog
+
+on:
+  workflow_dispatch:         # 允许手动触发测试
+  schedule:
+    - cron: '*/5 * * * *'   # 每 5 分钟；实际排队后约 5-15 分钟/次（GitHub 免费层特性）
+
+concurrency:
+  # 上一轮还没跑完就跳过，避免多份实例同时写 state.json
+  group: watchdog-run
+  cancel-in-progress: false
+
+# 注意额度：public repo 的 Actions 免费；private repo 免费层 2000 分钟/月，
+# 每次 run 约 4-6 分钟 → 每 5 分钟跑一次会耗尽。private 用户请降低 cron 频率
+# （如 */30）或改用 public repo（本项目无敏感信息，state.json 也无害）。
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20      # 远高于一次 run 实际时长（<10min）
+    permissions:
+      contents: write        # 回推 state.json 用
+
+    env:
+      LARK_APP_ID: ${{ secrets.LARK_APP_ID }}
+      LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
+      LARK_OPEN_ID: ${{ secrets.LARK_OPEN_ID }}
+
+    steps:
+      # 项目内容就在 repo 根目录（.github/ 也在根），默认 checkout 即可
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false  # 后面自己装 token
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run watchdog
+        id: run
+        run: |
+          python main.py > run.stdout 2> run.stderr || true
+          cat run.stdout
+          echo "--- stderr ---"
+          cat run.stderr || true
+
+      - name: Step summary
+        if: always()
+        run: |
+          {
+            echo '## market-watchdog run summary'
+            echo ''
+            echo '```json'
+            if [ -f last_run_summary.json ]; then
+              cat last_run_summary.json
+            else
+              echo '{ "status": "no summary generated" }'
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ---- state.json 回推：只有真的改了才 commit ----
+      - name: Check for state changes
+        id: git_status
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 兜底：main.py 异常退出时 state.json 可能不存在，touch 空文件避免 git add fatal
+          touch state.json last_run_summary.json
+          git add state.json last_run_summary.json
+          if git diff --cached --quiet; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit + push state.json
+        if: steps.git_status.outputs.has_changes == 'true'
+        env:
+          # runner 不会自动把 GITHUB_TOKEN 导出为环境变量，必须显式传
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git commit -m "[market-watchdog] auto-update state.json ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+          git remote set-url origin \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin HEAD
+
+      - name: Upload artifacts (debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: watchdog-debug
+          path: |
+            state.json
+            last_run_summary.json
+            run.stdout
+            run.stderr
+          if-no-files-found: ignore
+          retention-days: 7

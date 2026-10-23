@@ -1,0 +1,175 @@
+# ============================================================
+# Market Watchdog — 全局配置
+# 所有标的池、渠道开关、阈值、推送目标都在这里。
+# 标的池：V1 用指数 well-known 成分硬编码，动态成交额排行 = V2。
+# 信源：只有免费层（SEC EDGAR / FRED / RSS / Nitter；company_ir V1 禁用，
+#       详见下方 sources.company_ir 注释）。
+# ============================================================
+
+# 说明：V1 的运行节奏由 GitHub Actions cron 控制（见 .github/workflows/watchdog.yml），
+# 各信源的超时由源代码内的 requests timeout 控制；本节仅作部署参数备忘，无代码消费。
+run:
+  poll_interval_seconds: 300          # = cron */5
+  timeout_per_source_seconds: 20      # 各源内部实现（requests timeout）
+  max_run_seconds: 300                # Actions 单次 run 的软预算
+
+# ------------------------------------------------------------
+# 标的池（v1 硬编码，按用户指定 8 个市场维度展开）
+# CIK 用于 SEC EDGAR 8-K 抓取（CIK 是 SEC 的公司 ID，不是 ticker）
+# ticker 用于 FRED 等其他信源
+# ------------------------------------------------------------
+tickers:
+  # V1 核心：本轮三起事件的真实关联方 —— 必选
+  v1_core:
+    - name: Meta Platforms Inc.
+      ticker: META
+      cik: "0001326801"
+      sector: AI 算力平台
+    - name: NVIDIA Corp.
+      ticker: NVDA
+      cik: "0001045810"
+      sector: AI 算力硬件
+    - name: AMD Inc.
+      ticker: AMD
+      cik: "0000002488"
+      sector: AI 算力硬件
+    - name: Apple Inc.
+      ticker: AAPL
+      cik: "000037996"
+      sector: 消费电子
+    - name: Alphabet Inc.
+      ticker: GOOGL
+      cik: "0001652809"
+      sector: AI 平台
+    - name: Microsoft Corp.
+      ticker: MSFT
+      cik: "0000789019"
+      sector: 云计算/AI
+    - name: Amazon.com Inc.
+      ticker: AMZN
+      cik: "0001018724"
+      sector: 云计算/AI
+    # CoreWeave 2026-03 已 IPO（NASDAQ: CRWV）；溯源报告中的 −15.5% 即其股价
+    - name: CoreWeave Inc.
+      ticker: CRWV
+      cik: "0001769628"
+      sector: AI 云算力
+
+  # 费城半导体指数 SOX（well-known 10 只，不是全 30）
+  sox_well_known:
+    - { name: "Intel Corp.", ticker: INTC, cik: "0000050863", sector: 半导体 }
+    - { name: "Applied Materials", ticker: AMAT, cik: "0000006951", sector: 半导体 }
+    - { name: "Broadcom Inc.", ticker: AVGO, cik: "0001441873", sector: 半导体 }
+    - { name: "Texas Instruments", ticker: TXN, cik: "0000097476", sector: 半导体 }
+    - { name: "STMicroelectronics", ticker: STM, cik: "0001138233", sector: 半导体 }
+
+  # 纳指 100 NDX（well-known 10 只，不是全 100）
+  ndx_well_known:
+    - { name: "Tesla Inc.", ticker: TSLA, cik: "0001318605", sector: 电动车 }
+    - { name: "Netflix Inc.", ticker: NFLX, cik: "0001065280", sector: 流媒体 }
+    - { name: "PayPal", ticker: PYPL, cik: "0001633917", sector: 支付 }
+    - { name: "QUALCOMM", ticker: QCOM, cik: "0000080432", sector: 半导体 }
+
+  # 大中华区交叉标的（台股/港股 ADR）：
+  # 纯 A 股本地公司无 SEC CIK，靠中文快讯层（rss_feeds）覆盖
+  greater_china_well_known:
+    - { name: "台积电 ADR（台湾）", ticker: TSM, cik: "0001046179", sector: 半导体 }
+    - { name: "比亚迪股份（港股 1211 / OTC ADR）", ticker: BYDDY, cik: "", sector: 电动车 }
+
+  # 港股 top 50
+  hk_well_known:
+    - { name: 阿里巴巴 ADR, ticker: BABA, cik: "0001577552", sector: 电商 }
+    - { name: 京东 ADR, ticker: JD, cik: "0001613211", sector: 电商 }
+    - { name: 拼多多 ADR, ticker: PDD, cik: "0001737806", sector: 电商 }
+    - { name: 腾讯 ADR, ticker: TCEHY, cik: "", sector: 社交/游戏 }
+    - { name: 百度 ADR, ticker: BIDU, cik: "0001374139", sector: 搜索/AI }
+
+# ------------------------------------------------------------
+# 信源开关 —— 每一个 source 都有独立开关 + 限流
+# ------------------------------------------------------------
+sources:
+  sec_edgar:
+    enabled: true
+    # SEC 官方限流：10 请求/分钟/IP —— 按 ticker 数 × 1.2 留余量
+    per_ticker_interval_seconds: 8
+    user_agent: "market-watchdog/1.0 (your@email.com)"  # 改成你自己的邮箱
+    # 只抓 8-K（current report），因为 10-K/10-Q 常规季报信噪比低
+    form_types: ["8-K", "6-K", "SC 13D", "SC 13G", "DEF 14A"]
+
+  # company_ir：V1 禁用。实测 2026-10-23 三个 feed 全部不可用：
+  #   - Meta / CoreWeave IR RSS → 429 Cloudflare JS 盾（无头 requests 无法通过，换 UA 无效）
+  #   - NVIDIA 旧 URL 404（IR 已迁 investor.nvidia.com），新域名同样 Cloudflare 盾
+  # 这些公司的重大公告已由 SEC EDGAR 8-K 覆盖。如你有无盾的 IR RSS，加回 feeds 即可。
+  company_ir:
+    enabled: false
+    feeds: []
+    # - url: "https://investor.atmeta.com/news-releases/rss.xml"
+    #   label: Meta 投资者关系
+    # - url: "https://investors.coreweave.com/rss"
+    #   label: CoreWeave 投资者关系
+
+  fred:
+    enabled: true
+    # FRED 官方 API 必须带 api_key（无匿名模式，实测 2026-10-23 缺 key 返回 400
+    # "Variable api_key is not set"）。留空自动走 fredgraph.csv 免 key 端点；
+    # 申请免费 key（https://fred.stlouisfed.org/docs/api/api_key.html）后填这里
+    api_key: ""
+    series_ids:
+      - "BAMLH0A0HYM2"      # ICE BofA US High Yield OAS（信用整体温度计）
+      - "BAMLH0A3HYC"       # ICE BofA CCC & Lower OAS（垃圾债最边缘；溯源报告 12.67pp 即此类）
+      - "VIXCLS"             # VIX 恐慌指数
+      - "SP500"              # S&P 500
+      - "NASDAQ100"          # NASDAQ 100
+
+  # 中文快讯层（财联社直连 API 需签名、无官方文档，实测不可行 → 一律走 RSSHub 公共路由。
+  # rsshub.app 在大陆直连 ConnectTimeout（实测），GitHub Actions 美国节点可达性以部署日志为准）
+  rss_feeds:
+    enabled: true
+    feeds:
+      - url: "https://rsshub.app/cls/telegraph"
+        label: 财联社电报（RSSHub）
+      - url: "https://rsshub.app/jin10/flash"
+        label: 金十数据 7x24（RSSHub）
+
+  # X 大 V：免费层用 Nitter RSS 镜像（第三方，偶发挂掉）
+  x_nitter:
+    enabled: true
+    # 两个镜像，轮换 / 失败兜底
+    instances:
+      - "https://nitter.privacydev.net"
+      - "https://nitter.poast.org"
+    handles:
+      - "chamath"        # Chamath Palihapitiya —— 溯源报告 CoreWeave 事件首发（handle 是 chamath，不是 palihapitiya）
+      - "elonmusk"       # Elon Musk —— 二次放大器
+      - "BillAckman"     # Bill Ackman —— 信用/宏观方向大 V
+
+# ------------------------------------------------------------
+# 推送：飞书单聊
+# 需要在 GitHub Secrets 里设 LARK_APP_ID / LARK_APP_SECRET / LARK_OPEN_ID
+# （本地测试可直接写死或用 .env）
+# ------------------------------------------------------------
+notifier:
+  feishu:
+    enabled: true
+    # 本地调试时可写死；生产放 env
+    app_id_env: "LARK_APP_ID"
+    app_secret_env: "LARK_APP_SECRET"
+    open_id_env: "LARK_OPEN_ID"
+    # 卡片样式在 notifier/feishu.py 的 build_card() 里构造（interactive card），
+    # 改样式改代码，此处无模板配置
+
+  # Telegram / Bark 可作 V2 补充；默认关闭
+  telegram:
+    enabled: false
+  bark:
+    enabled: false
+
+# ------------------------------------------------------------
+# 触发阈值（v1 用户说"无阈值全量推"，保留开关位以便后续加）
+# ------------------------------------------------------------
+thresholds:
+  min_severity: "all"   # all | high | critical
+  require_keywords: false
+  keyword_list: []
+  # 去重窗口：同一条内容 hash 在多少秒内不重复推
+  dedup_window_seconds: 3600

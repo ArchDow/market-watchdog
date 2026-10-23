@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-10-23T15:28:42.229337+00:00",
+  "candidates_total": 5,
+  "new_after_dedup": 0,
+  "push_ok": 0,
+  "push_fail": 0,
+  "sources": [
+    "sources.sec_edgar",
+    "sources.company_ir",
+    "sources.fred",
+    "sources.rss_feeds",
+    "sources.x_nitter"
+  ]
+}
