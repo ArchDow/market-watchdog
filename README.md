@@ -53,7 +53,7 @@ python main.py
    | `LARK_APP_SECRET` | 同一个应用的 App Secret |
    | `LARK_OPEN_ID` | 你自己的飞书单聊 open_id（`ou_` 开头） |
 
-3. Actions 里出现 `market-watchdog` 工作流，`Enable workflow`，手动触发一次看是否推成功。之后每 5 分钟自动跑。
+3. Actions 里出现 `market-watchdog` 工作流，`Enable workflow`，手动触发一次看是否推成功。之后每 10 分钟自动跑（GitHub 定时任务会延迟，实际间隔常为 10-20 分钟）。
 
 > **额度提醒**：public repo 的 Actions 免费；**private repo 免费层只有 2000 分钟/月**，
 > 而每 5 分钟一次 × 每次约 1-2 分钟 ≈ 8000+ 分钟/月，会耗尽额度。private 用户请把

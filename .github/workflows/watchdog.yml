@@ -3,7 +3,9 @@ name: market-watchdog
 on:
   workflow_dispatch:         # 允许手动触发测试
   schedule:
-    - cron: '*/5 * * * *'   # 每 5 分钟；实际排队后约 5-15 分钟/次（GitHub 免费层特性）
+    # 每 10 分钟。为什么不是 */5：GitHub 官方文档承认定时工作流在高负载时会延迟甚至被丢弃，
+    # 实测 */5 配置下 13 分钟内未被调度；*/10 更可靠，单次 run 约 4 分钟也不易重叠。
+    - cron: '*/10 * * * *'
 
 concurrency:
   # 上一轮还没跑完就跳过，避免多份实例同时写 state.json

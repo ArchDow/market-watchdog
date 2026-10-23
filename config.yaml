@@ -9,7 +9,7 @@
 # 说明：V1 的运行节奏由 GitHub Actions cron 控制（见 .github/workflows/watchdog.yml），
 # 各信源的超时由源代码内的 requests timeout 控制；本节仅作部署参数备忘，无代码消费。
 run:
-  poll_interval_seconds: 300          # = cron */5
+  poll_interval_seconds: 600          # = cron */10（GitHub 定时任务 */5 实测延迟严重，改 */10）
   timeout_per_source_seconds: 20      # 各源内部实现（requests timeout）
   max_run_seconds: 300                # Actions 单次 run 的软预算
 
