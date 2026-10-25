@@ -181,5 +181,7 @@ thresholds:
   min_severity: "all"   # all | high | critical
   require_keywords: false
   keyword_list: []
-  # 去重窗口：同一条内容 hash 在多少秒内不重复推
-  dedup_window_seconds: 3600
+  # 去重窗口：同一条内容 hash 在多少秒内不重复推。
+  # 2026-10-25 由 3600（1 小时）改为 604800（7 天）：RSS feed 里同一条新闻会停留数小时、
+  # FRED 观测值一天才更新一次，1 小时窗口过期后同一批内容会被重复推送（用户实测反馈）。
+  dedup_window_seconds: 604800

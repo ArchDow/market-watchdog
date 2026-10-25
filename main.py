@@ -101,6 +101,16 @@ def main() -> int:
     new_items = filter_new(all_items, store)
     log.info("去重后 %d 条需要推送", len(new_items))
 
+    # ---- 按时间排序（最新先推；时间解析失败的排最后）----
+    def _sort_key(it: dict):
+        ts = (it.get("timestamp") or "").replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(ts)
+        except ValueError:
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+    new_items.sort(key=_sort_key, reverse=True)
+
     # ---- 推送 ----
     push_ok, push_fail = 0, 0
     if notifier and new_items:

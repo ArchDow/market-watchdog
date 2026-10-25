@@ -21,7 +21,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import requests
@@ -35,6 +37,60 @@ MSG_URL = "https://open.feishu.cn/open-apis/im/v1/messages"
 
 MAX_RETRIES = 3
 RETRY_BASE = 1.0  # seconds
+
+# ------------------------------------------------------------
+# 重大信息判定（用户要求：可能对市场有重大影响的信息标红）
+# 规则：① SEC 8-K/6-K（公司重大事件备案）→ high
+#       ② title 命中强信号关键词（中英）→ high
+#       ③ FRED 日环比 |pct| ≥ 5% → high
+#       其余 normal。关键词表可按需增删。
+# ------------------------------------------------------------
+HIGH_KEYWORDS = [
+    # 中文
+    "破产", "违约", "退市", "爆仓", "熔断", "突发", "紧急", "重大", "重磅",
+    "制裁", "停牌", "清算", "崩", "暴跌", "暴涨", "大涨", "大跌", "飙升",
+    "加息", "降息", "裁员", "收购", "并购", "停火", "开战", "历史新高", "历史新低",
+    # 英文（匹配时统一 upper）
+    "BANKRUPTCY", "DEFAULT", "CRASH", "PLUNGE", "SOAR", "SURGE", "EMERGENCY",
+    "HALT", "SUSPENSION", "DOWNGRADE", "CHAPTER 11", "INSOLVENCY",
+    "RECORD HIGH", "RECORD LOW", "FORCE MAJEURE", "LAYOFF", "ACQUISITION",
+    "MERGER", "TAKEOVER", "MILITARY", "WAR",
+]
+HIGH_KEYWORDS = [k.upper() for k in HIGH_KEYWORDS]
+
+_PCT_RE = re.compile(r"日环比\s*([+-]?\d+(?:\.\d+)?)%")
+
+
+def _extract_pct(title: str) -> Optional[float]:
+    m = _PCT_RE.search(title or "")
+    return float(m.group(1)) if m else None
+
+
+def classify_severity(item: dict) -> str:
+    """返回 'high'（重大，标红）或 'normal'。"""
+    src = (item.get("source") or "").lower()
+    if src == "sec_edgar" and item.get("form_type") in ("8-K", "6-K"):
+        return "high"  # 8-K = Material Events，公司重大事项法定披露
+    title = (item.get("title") or "").upper()
+    for kw in HIGH_KEYWORDS:
+        if kw in title:
+            return "high"
+    pct = _extract_pct(item.get("title", ""))
+    if pct is not None and abs(pct) >= 5.0:
+        return "high"  # FRED 宏观指标日波动 ≥5% 视为重大
+    return "normal"
+
+
+def _fmt_time_bj(ts: str) -> str:
+    """ISO8601（任意时区）→ 北京时间 'YYYY-MM-DD HH:MM 北京时间'；解析失败返回原串。"""
+    try:
+        dt = datetime.fromisoformat((ts or "").replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        bj = dt.astimezone(timezone(timedelta(hours=8)))
+        return bj.strftime("%Y-%m-%d %H:%M") + " 北京时间"
+    except (ValueError, TypeError):
+        return ts or ""
 
 
 class FeishuNotifier:
@@ -97,12 +153,20 @@ class FeishuNotifier:
             f"🏢 {company}" if company else None,
             f"📋 {form_type}" if form_type else None,
         ] if p]
-        ticker_info = "  ·  ".join(ticker_info_parts) or "(标的未匹配)"
+        ticker_info = "  ·  ".join(ticker_info_parts)
+        time_bj = _fmt_time_bj(timestamp)
+
+        # 正文：标题 + （仅有标的时才显示标的行）+ 北京时间（加粗醒目）
+        content_lines = [f"**{title}**", ""]
+        if ticker_info:
+            content_lines += [ticker_info, ""]
+        if time_bj:
+            content_lines.append(f"🕐 **{time_bj}**")
 
         elements = [
             {"tag": "div",
              "text": {"tag": "lark_md",
-                      "content": f"**{title}**\n\n{ticker_info}\n\n🕐 {timestamp}"}},
+                      "content": "\n".join(content_lines)}},
         ]
         if url:
             elements.append({
@@ -118,12 +182,15 @@ class FeishuNotifier:
                            "content": f"source: {source_label} · market-watchdog v1"}]
         })
 
+        severity = classify_severity(item)
+        icon = "🔴" if severity == "high" else "🔔"
         return {
             "config": {"wide_screen_mode": True},
             "header": {
                 "title": {"tag": "plain_text",
-                          "content": f"🔔 市场异动 · {source_label}"},
-                "template": "red" if any(k in title.upper() for k in ["DEFAULT", "BANKRUPTCY", "FORCE MAJEURE"]) else "blue",
+                          "content": f"{icon} 市场异动 · {source_label}"},
+                # 重大信息整卡标红（用户要求）；其余蓝色
+                "template": "red" if severity == "high" else "blue",
             },
             "elements": elements,
         }

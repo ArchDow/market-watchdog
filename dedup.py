@@ -28,6 +28,10 @@ from typing import Iterable
 
 DEFAULT_STATE_PATH = os.path.join(os.path.dirname(__file__), "state.json")
 
+# state.json 容量上限：超过后按「标记时间最旧优先」淘汰。
+# 7 天窗口 × 中文快讯约 500 条/天 ≈ 3500 条，远低于此上限；这是防御性兜底。
+MAX_STATE_ENTRIES = 20000
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -85,6 +89,9 @@ class DedupStore:
                 t = 0
             if t >= cutoff:
                 kept[h] = iso_ts
+        # 容量兜底：超上限时淘汰最旧的
+        if len(kept) > MAX_STATE_ENTRIES:
+            kept = dict(sorted(kept.items(), key=lambda kv: kv[1])[-MAX_STATE_ENTRIES:])
         self.data["pushed"] = kept
         self.data["meta"]["last_commit"] = ""  # workflow 会 git commit 填这个
 
