@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-11-08T21:45:00.240399+00:00",
+  "generated_at": "2026-11-08T22:22:36.875320+00:00",
   "candidates_total": 27,
-  "new_after_dedup": 2,
-  "push_ok": 2,
+  "new_after_dedup": 6,
+  "push_ok": 6,
   "push_fail": 0,
   "sources": [
     "sources.sec_edgar",
